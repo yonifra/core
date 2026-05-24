@@ -1,0 +1,47 @@
+// effects.alm — pure vs effectful code
+// This file is sandbox-safe (no forbidden effects)
+
+// Pure computations — always safe
+x = 42;
+y = x | 42 => 100 | _ => 0;
+
+// Metrics — pure (atomic counter, no I/O)
+#reqs;
+#reqs;
+
+// Struct access — pure
+pt = Vec2{x: 3, y: 4};
+mag = pt.x;
+
+// Loops — pure
+*(3) {
+  #tick
+};
+
+// Assertions — pure
+@test(pure) {
+  assertEq(1, 1);
+  assertNe(1, 2);
+  assertGt(10, 5);
+  assertLt(5, 10)
+};
+
+@test(types) {
+  t = type(42);
+  assertEq(t, "int");
+  s = type("hi");
+  assertEq(s, "str")
+};
+
+@test(strConv) {
+  s = str(42);
+  assertEq(s, "42")
+};
+
+// NOTE: These would FAIL effect check in strict mode:
+// print(42)        — requires !io
+// $HOME            — requires !io
+// fetch(url)       — requires !net
+// readFile(path)   — requires !fs
+
+y

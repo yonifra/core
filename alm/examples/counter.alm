@@ -1,0 +1,26 @@
+// counter.alm — metric counters, loops, assertions
+
+// Track operations
+#ops;
+#ops;
+#ops;
+
+// Loop with metric
+*(5) {
+  #iter
+};
+
+// Binding and assertion
+total = 42;
+
+@test(counter) {
+  assertEq(42, 42)
+};
+
+@test(types) {
+  x = 10;
+  y = 20;
+  assertGt(y, x)
+};
+
+total

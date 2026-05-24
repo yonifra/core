@@ -1,0 +1,29 @@
+// structs.alm — struct literals and field access
+
+// Basic struct
+p = Point{x: 10, y: 20};
+
+// Access fields
+px = p.x;
+py = p.y;
+
+// Nested values
+cfg = Config{port: 8080, name: "svc"};
+
+// Struct with computed values
+a = 5;
+b = 10;
+rect = Rect{w: a, h: b};
+
+@test(fields) {
+  pt = Point{x: 1, y: 2};
+  assertEq(pt.x, 1);
+  assertEq(pt.y, 2)
+};
+
+@test(strField) {
+  c = App{name: "alm"};
+  assertEq(c.name, "alm")
+};
+
+px

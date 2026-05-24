@@ -1,0 +1,37 @@
+// match.alm — pattern matching showcase
+
+// Integer match
+x = 42;
+r1 = x | 42 => "found" | _ => "nope";
+
+// Multi-arm
+code = 200;
+status = code | 200 => "ok" | 404 => "missing" | 500 => "error" | _ => "unknown";
+
+// Boolean match
+flag = true;
+msg = flag | true => "yes" | false => "no";
+
+// Nested: match result used in binding
+val = 3;
+label = val | 1 => "one" | 2 => "two" | 3 => "three" | _ => "many";
+
+@test(intMatch) {
+  x = 1;
+  r = x | 1 => 10 | _ => 0;
+  assertEq(r, 10)
+};
+
+@test(wildcard) {
+  x = 99;
+  r = x | 1 => 10 | _ => 0;
+  assertEq(r, 0)
+};
+
+@test(multiArm) {
+  c = 404;
+  s = c | 200 => "ok" | 404 => "missing" | _ => "?";
+  assertEq(s, "missing")
+};
+
+label
