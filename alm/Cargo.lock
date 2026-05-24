@@ -53,6 +53,7 @@ dependencies = [
  "alm-lint",
  "alm-llvm",
  "alm-parser",
+ "alm-target",
  "alm-wasm",
 ]
 
@@ -99,6 +100,7 @@ dependencies = [
  "alm-ir",
  "alm-lexer",
  "alm-parser",
+ "alm-target",
  "inkwell",
 ]
 
@@ -108,6 +110,10 @@ version = "0.1.0-alpha"
 dependencies = [
  "alm-lexer",
 ]
+
+[[package]]
+name = "alm-target"
+version = "0.1.0-alpha"
 
 [[package]]
 name = "alm-wasm"

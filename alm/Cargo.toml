@@ -7,6 +7,7 @@ members = [
     "crates/alm-interp",
     "crates/alm-llvm",
     "crates/alm-wasm",
+    "crates/alm-target",
     "crates/alm-config",
     "crates/alm-lint",
     "crates/alm-agent",

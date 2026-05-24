@@ -56,7 +56,35 @@ impl<'ctx> Codegen<'ctx> {
         let obj_path = format!("{output_path}.o");
         Self::compile_to_object(source, &obj_path)?;
         Self::link_executable(&obj_path, output_path)?;
-        // Clean up object file
+        let _ = std::fs::remove_file(&obj_path);
+        Ok(())
+    }
+
+    /// Compile to object file for a specific target.
+    pub fn compile_to_object_for_target(
+        source: &str,
+        output_path: &str,
+        target: &alm_target::Target,
+    ) -> Result<(), String> {
+        let ir_module = Lowerer::lower_source(source)?;
+        let context = Context::create();
+        let mut codegen = Codegen::new(&context, &ir_module.name);
+        codegen.emit_module(&ir_module)?;
+        codegen.write_object_for_target(output_path, target.llvm_triple())
+    }
+
+    /// Compile to executable for a specific target.
+    pub fn compile_to_executable_for_target(
+        source: &str,
+        output_path: &str,
+        target: &alm_target::Target,
+    ) -> Result<(), String> {
+        if target.is_wasm() {
+            return Err("use alm-wasm backend for wasm32 target".into());
+        }
+        let obj_path = format!("{output_path}{}", target.obj_extension());
+        Self::compile_to_object_for_target(source, &obj_path, target)?;
+        Self::link_executable(&obj_path, output_path)?;
         let _ = std::fs::remove_file(&obj_path);
         Ok(())
     }
@@ -389,6 +417,31 @@ impl<'ctx> Codegen<'ctx> {
         machine
             .write_to_file(&self.module, FileType::Object, Path::new(output_path))
             .map_err(|e| format!("failed to write object: {}", e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn write_object_for_target(&self, output_path: &str, triple_str: &str) -> Result<(), String> {
+        Target::initialize_all(&InitializationConfig::default());
+
+        let triple = TargetTriple::create(triple_str);
+        let target = Target::from_triple(&triple)
+            .map_err(|e| format!("unsupported target '{}': {}", triple_str, e.to_string()))?;
+
+        let machine = target
+            .create_target_machine(
+                &triple,
+                "generic",
+                "",
+                OptimizationLevel::Default,
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .ok_or_else(|| format!("cannot create machine for {triple_str}"))?;
+
+        machine
+            .write_to_file(&self.module, FileType::Object, Path::new(output_path))
+            .map_err(|e| format!("failed to write object for {triple_str}: {}", e.to_string()))?;
 
         Ok(())
     }

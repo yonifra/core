@@ -40,6 +40,7 @@ fn main() {
         "heal" => cmd_heal(&args),
         "sandbox" => cmd_sandbox(&args),
         "effects" => cmd_effects(&args),
+        "targets" => cmd_targets(),
         "repl" => cmd_repl(),
         "version" | "--version" | "-v" => {
             println!("alm 0.1.0-alpha");
@@ -76,6 +77,7 @@ fn print_usage() {
     eprintln!("  heal <file.alm>    Self-heal compilation errors");
     eprintln!("  sandbox <file.alm> Run in WASM sandbox");
     eprintln!("  effects <file.alm> Check effect violations");
+    eprintln!("  targets            List available targets");
     eprintln!("  repl               Interactive mode");
     eprintln!("  version            Show version");
 }
@@ -226,17 +228,26 @@ fn cmd_repl() {
 
 fn cmd_build(args: &[String]) {
     if args.len() < 3 {
-        eprintln!("E301 usage: alm build <file.alm> [-o output]");
+        eprintln!("E301 usage: alm build <file.alm> [-o output] [--target <target>] [--all-targets]");
         process::exit(1);
     }
 
     let input = &args[2];
-    let output = if args.len() >= 5 && args[3] == "-o" {
-        args[4].clone()
-    } else {
-        // Strip .alm extension for output name
-        input.strip_suffix(".alm").unwrap_or(input).to_string()
-    };
+
+    // Parse --target flag
+    let target_name = args.iter()
+        .position(|a| a == "--target")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str());
+
+    let all_targets = args.iter().any(|a| a == "--all-targets");
+
+    // Parse -o flag
+    let output_base = args.iter()
+        .position(|a| a == "-o")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or_else(|| input.strip_suffix(".alm").unwrap_or(input));
 
     let source = match fs::read_to_string(input) {
         Ok(s) => s,
@@ -246,13 +257,56 @@ fn cmd_build(args: &[String]) {
         }
     };
 
-    match Codegen::compile_to_executable(&source, &output) {
-        Ok(()) => {
-            println!("compiled: {output}");
-        }
-        Err(e) => {
-            eprintln!("{e}");
+    if all_targets {
+        // Build for all targets in alm.yaml
+        let config = AlmConfig::find_and_load().unwrap_or_else(|_| {
+            eprintln!("E304 --all-targets requires alm.yaml");
             process::exit(1);
+        });
+        let targets = alm_target::resolve_targets(&config.project.targets).unwrap_or_else(|e| {
+            eprintln!("E305 {e}");
+            process::exit(1);
+        });
+        for t in &targets {
+            let spec = alm_target::BuildSpec::new(*t, output_base, Some("build"));
+            let _ = std::fs::create_dir_all(std::path::Path::new(&spec.output_path).parent().unwrap());
+            let result = if t.is_wasm() {
+                alm_wasm::WasmCompiler::compile_to_file(&source, &spec.output_path)
+            } else {
+                Codegen::compile_to_object_for_target(&source, &spec.output_path, t)
+            };
+            match result {
+                Ok(()) => println!("  {} → {}", t, spec.output_path),
+                Err(e) => eprintln!("  {} FAILED: {e}", t),
+            }
+        }
+    } else if let Some(tname) = target_name {
+        // Build for specific target
+        let target = alm_target::Target::from_name(tname).unwrap_or_else(|| {
+            eprintln!("E305 unknown target '{tname}'. Use `alm targets` to list.");
+            process::exit(1);
+        });
+        let output = format!("{}{}", output_base, target.exe_extension());
+        let result = if target.is_wasm() {
+            alm_wasm::WasmCompiler::compile_to_file(&source, &output)
+        } else if target.can_link_on_host() {
+            Codegen::compile_to_executable_for_target(&source, &output, &target)
+        } else {
+            // Cross-compile: object only (no linker)
+            let obj_output = format!("{}{}", output_base, target.obj_extension());
+            Codegen::compile_to_object_for_target(&source, &obj_output, &target)
+                .map(|()| println!("(object only — cross-linker not available)"))
+        };
+        match result {
+            Ok(()) => println!("compiled: {output} ({})", target),
+            Err(e) => { eprintln!("{e}"); process::exit(1); }
+        }
+    } else {
+        // Default: build for host
+        let output = output_base.to_string();
+        match Codegen::compile_to_executable(&source, &output) {
+            Ok(()) => println!("compiled: {output}"),
+            Err(e) => { eprintln!("{e}"); process::exit(1); }
         }
     }
 }
@@ -541,5 +595,23 @@ fn cmd_effects(args: &[String]) {
             println!("  {v}");
         }
         process::exit(1);
+    }
+}
+
+fn cmd_targets() {
+    let host = alm_target::Target::host();
+    println!("Available targets:");
+    println!();
+    for t in alm_target::Target::ALL {
+        let marker = if *t == host { " (host)" } else { "" };
+        let linkable = if t.can_link_on_host() { "" } else { " [object-only]" };
+        println!("  {:<20} {:>8}  {}{}{}", t.name(), t.object_format(), t.llvm_triple(), marker, linkable);
+    }
+
+    if let Ok(config) = AlmConfig::find_and_load() {
+        if !config.project.targets.is_empty() {
+            println!();
+            println!("Configured in alm.yaml: {}", config.project.targets.join(", "));
+        }
     }
 }
