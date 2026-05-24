@@ -16,6 +16,8 @@ use alm_interp::{run, Interpreter};
 use alm_lint::Linter;
 use alm_llvm::Codegen;
 use alm_parser::Parser;
+use alm_wasm::{WasmCompiler, WasmSandbox, EffectChecker};
+use alm_wasm::sandbox::SandboxConfig;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -36,6 +38,8 @@ fn main() {
         "generate" => cmd_generate(&args),
         "meta" => cmd_meta(&args),
         "heal" => cmd_heal(&args),
+        "sandbox" => cmd_sandbox(&args),
+        "effects" => cmd_effects(&args),
         "repl" => cmd_repl(),
         "version" | "--version" | "-v" => {
             println!("alm 0.1.0-alpha");
@@ -70,6 +74,8 @@ fn print_usage() {
     eprintln!("  generate <intent>  Generate ALM agent prompt");
     eprintln!("  meta <file.alm>    Generate .alm.meta summary");
     eprintln!("  heal <file.alm>    Self-heal compilation errors");
+    eprintln!("  sandbox <file.alm> Run in WASM sandbox");
+    eprintln!("  effects <file.alm> Check effect violations");
     eprintln!("  repl               Interactive mode");
     eprintln!("  version            Show version");
 }
@@ -450,6 +456,90 @@ fn cmd_heal(args: &[String]) {
     print!("{}", SelfHealLoop::format_result(&result));
 
     if !result.success {
+        process::exit(1);
+    }
+}
+
+fn cmd_sandbox(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm sandbox <file.alm>");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    // Check effects first
+    let report = EffectChecker::check(&source, "strict");
+    if !report.violations.is_empty() {
+        eprintln!("Effect violations (sandbox:strict):");
+        for v in &report.violations {
+            eprintln!("  {v}");
+        }
+        process::exit(1);
+    }
+
+    // Compile to WASM and run in sandbox
+    let config = SandboxConfig::default();
+    let result = WasmSandbox::compile_and_run(&source, &config);
+
+    if result.success {
+        println!("sandbox: OK (returned {})", result.return_value.unwrap_or(0));
+        if !result.metrics.is_empty() {
+            println!("metrics:");
+            for (name, val) in &result.metrics {
+                println!("  {name} = {val}");
+            }
+        }
+    } else {
+        eprintln!("sandbox: FAILED — {}", result.error.unwrap_or_default());
+        process::exit(1);
+    }
+}
+
+fn cmd_effects(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm effects <file.alm> [--mode strict|relaxed]");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    let mode = args.iter()
+        .position(|a| a == "--mode")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("strict");
+
+    let report = EffectChecker::check(&source, mode);
+
+    if report.effects.is_empty() {
+        println!("Pure: no effects detected");
+    } else {
+        println!("Effects: {}", report.effects.iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join(", "));
+    }
+
+    if report.violations.is_empty() {
+        println!("No violations (mode: {mode})");
+    } else {
+        println!("{} violation(s):", report.violations.len());
+        for v in &report.violations {
+            println!("  {v}");
+        }
         process::exit(1);
     }
 }

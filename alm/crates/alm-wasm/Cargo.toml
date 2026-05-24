@@ -1,0 +1,12 @@
+[package]
+name = "alm-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+alm-lexer = { path = "../alm-lexer" }
+alm-parser = { path = "../alm-parser" }
+alm-ir = { path = "../alm-ir" }
+wasm-encoder = "0.225"
+wasmtime = "29"

@@ -9,6 +9,7 @@ alm-lexer = { path = "../alm-lexer" }
 alm-parser = { path = "../alm-parser" }
 alm-interp = { path = "../alm-interp" }
 alm-llvm = { path = "../alm-llvm" }
+alm-wasm = { path = "../alm-wasm" }
 alm-config = { path = "../alm-config" }
 alm-lint = { path = "../alm-lint" }
 alm-agent = { path = "../alm-agent" }
