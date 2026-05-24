@@ -1,0 +1,10 @@
+[package]
+name = "alm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+alm-lexer = { path = "../alm-lexer" }
+alm-parser = { path = "../alm-parser" }
+alm-interp = { path = "../alm-interp" }

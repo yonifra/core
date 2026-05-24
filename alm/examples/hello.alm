@@ -1,0 +1,42 @@
+// ALM example: demonstrates core syntax
+// Token-dense, sigil-based, attention-optimized
+
+// Bindings
+x = 42;
+name = "ALM";
+
+// Struct literal
+w = Widget{a: 1, b: 2};
+
+// Metric tracking
+#requests;
+#requests;
+#requests;
+
+// Match expression
+result = x | 42 => "found" | _ => "nope";
+
+// Block with return
+val = {
+  a = 10;
+  b = 20;
+  >a
+};
+
+// Annotation (test)
+@test(basicMath) {
+  assertEq(42, 42)
+};
+
+@test(stringOps) {
+  s = "hello";
+  assert(true)
+};
+
+// Loop
+*(3) {
+  #loopIter
+};
+
+// Final expression
+result

@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/alm-lexer",
+    "crates/alm-parser",
+    "crates/alm-ir",
+    "crates/alm-interp",
+    "crates/alm-cli",
+]
+
+[workspace.package]
+version = "0.1.0-alpha"
+edition = "2024"
+license = "MIT"
