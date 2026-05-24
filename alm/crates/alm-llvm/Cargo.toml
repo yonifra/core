@@ -1,5 +1,5 @@
 [package]
-name = "alm-ir"
+name = "alm-llvm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,3 +7,5 @@ license.workspace = true
 [dependencies]
 alm-lexer = { path = "../alm-lexer" }
 alm-parser = { path = "../alm-parser" }
+alm-ir = { path = "../alm-ir" }
+inkwell = { version = "0.5", features = ["llvm18-0"] }

@@ -1,0 +1,3 @@
+// ALM native compilation test
+// Returns 42 as exit code
+>42

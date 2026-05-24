@@ -11,6 +11,7 @@ use std::fs;
 use std::process;
 
 use alm_interp::{run, Interpreter};
+use alm_llvm::Codegen;
 use alm_parser::Parser;
 
 fn main() {
@@ -23,7 +24,9 @@ fn main() {
 
     match args[1].as_str() {
         "run" => cmd_run(&args),
+        "build" => cmd_build(&args),
         "check" => cmd_check(&args),
+        "emit-ir" => cmd_emit_ir(&args),
         "test" => cmd_test(&args),
         "repl" => cmd_repl(),
         "version" | "--version" | "-v" => {
@@ -49,8 +52,10 @@ fn print_usage() {
     eprintln!("Usage: alm <command> [args]");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  run <file.alm>     Execute ALM source");
+    eprintln!("  run <file.alm>     Execute ALM source (interpreted)");
+    eprintln!("  build <file.alm>   Compile to native binary");
     eprintln!("  check <file.alm>   Parse and type-check only");
+    eprintln!("  emit-ir <file.alm> Show LLVM IR");
     eprintln!("  test <file.alm>    Run @test blocks");
     eprintln!("  repl               Interactive mode");
     eprintln!("  version            Show version");
@@ -190,6 +195,62 @@ fn cmd_repl() {
                 eprintln!("E303 read error: {e}");
                 break;
             }
+        }
+    }
+}
+
+fn cmd_build(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm build <file.alm> [-o output]");
+        process::exit(1);
+    }
+
+    let input = &args[2];
+    let output = if args.len() >= 5 && args[3] == "-o" {
+        args[4].clone()
+    } else {
+        // Strip .alm extension for output name
+        input.strip_suffix(".alm").unwrap_or(input).to_string()
+    };
+
+    let source = match fs::read_to_string(input) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {input}: {e}");
+            process::exit(1);
+        }
+    };
+
+    match Codegen::compile_to_executable(&source, &output) {
+        Ok(()) => {
+            println!("compiled: {output}");
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    }
+}
+
+fn cmd_emit_ir(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm emit-ir <file.alm>");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    match Codegen::compile_to_ir(&source) {
+        Ok(ir) => println!("{ir}"),
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
         }
     }
 }
