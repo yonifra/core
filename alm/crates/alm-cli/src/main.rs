@@ -10,6 +10,7 @@ use std::env;
 use std::fs;
 use std::process;
 
+use alm_agent::{PromptBuilder, SelfHealLoop, ModuleSummary};
 use alm_config::AlmConfig;
 use alm_interp::{run, Interpreter};
 use alm_lint::Linter;
@@ -32,6 +33,9 @@ fn main() {
         "test" => cmd_test(&args),
         "lint" => cmd_lint(&args),
         "ci" => cmd_ci(),
+        "generate" => cmd_generate(&args),
+        "meta" => cmd_meta(&args),
+        "heal" => cmd_heal(&args),
         "repl" => cmd_repl(),
         "version" | "--version" | "-v" => {
             println!("alm 0.1.0-alpha");
@@ -63,6 +67,9 @@ fn print_usage() {
     eprintln!("  test <file.alm>    Run @test blocks");
     eprintln!("  lint <file.alm>    Static analysis");
     eprintln!("  ci                 Run CI pipeline from alm.yaml");
+    eprintln!("  generate <intent>  Generate ALM agent prompt");
+    eprintln!("  meta <file.alm>    Generate .alm.meta summary");
+    eprintln!("  heal <file.alm>    Self-heal compilation errors");
     eprintln!("  repl               Interactive mode");
     eprintln!("  version            Show version");
 }
@@ -354,4 +361,95 @@ fn cmd_ci() {
 
     println!();
     println!("CI pipeline complete: {} stages passed", stages.len());
+}
+
+fn cmd_generate(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm generate <intent> [--json]");
+        process::exit(1);
+    }
+
+    let config = match AlmConfig::find_and_load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("E304 {e}");
+            process::exit(1);
+        }
+    };
+
+    let intent = args[2..].iter()
+        .filter(|a| !a.starts_with("--"))
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let prompt = PromptBuilder::build(&config, &intent);
+
+    if args.iter().any(|a| a == "--json") {
+        println!("{}", PromptBuilder::to_json(&prompt));
+    } else {
+        println!("{}", PromptBuilder::to_text(&prompt));
+    }
+}
+
+fn cmd_meta(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm meta <file.alm> [--json]");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    match ModuleSummary::from_source(&args[2], &source) {
+        Ok(summary) => {
+            if args.iter().any(|a| a == "--json") {
+                println!("{}", summary.to_json());
+            } else {
+                print!("{}", summary.to_meta_text());
+            }
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    }
+}
+
+fn cmd_heal(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm heal <file.alm>");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    let config = AlmConfig::find_and_load().unwrap_or_else(|_| {
+        AlmConfig::parse("version: \"0.1.0\"\nproject:\n  name: adhoc\nagent:\n  self_heal: true\n").unwrap()
+    });
+
+    let heal = SelfHealLoop::from_config(&config);
+    let result = heal.run(&source, &config, |_prompt| {
+        // In alpha: no LLM API call. Print prompt, return None.
+        // Real integration would call Claude API here.
+        eprintln!("(agent: no LLM backend configured — manual repair needed)");
+        None
+    });
+
+    print!("{}", SelfHealLoop::format_result(&result));
+
+    if !result.success {
+        process::exit(1);
+    }
 }

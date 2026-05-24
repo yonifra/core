@@ -8,6 +8,7 @@ members = [
     "crates/alm-llvm",
     "crates/alm-config",
     "crates/alm-lint",
+    "crates/alm-agent",
     "crates/alm-cli",
 ]
 
