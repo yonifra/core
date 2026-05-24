@@ -10,7 +10,9 @@ use std::env;
 use std::fs;
 use std::process;
 
+use alm_config::AlmConfig;
 use alm_interp::{run, Interpreter};
+use alm_lint::Linter;
 use alm_llvm::Codegen;
 use alm_parser::Parser;
 
@@ -28,6 +30,8 @@ fn main() {
         "check" => cmd_check(&args),
         "emit-ir" => cmd_emit_ir(&args),
         "test" => cmd_test(&args),
+        "lint" => cmd_lint(&args),
+        "ci" => cmd_ci(),
         "repl" => cmd_repl(),
         "version" | "--version" | "-v" => {
             println!("alm 0.1.0-alpha");
@@ -57,6 +61,8 @@ fn print_usage() {
     eprintln!("  check <file.alm>   Parse and type-check only");
     eprintln!("  emit-ir <file.alm> Show LLVM IR");
     eprintln!("  test <file.alm>    Run @test blocks");
+    eprintln!("  lint <file.alm>    Static analysis");
+    eprintln!("  ci                 Run CI pipeline from alm.yaml");
     eprintln!("  repl               Interactive mode");
     eprintln!("  version            Show version");
 }
@@ -148,18 +154,24 @@ fn cmd_test(args: &[String]) {
 
     let mut passed = 0;
     let mut failed = 0;
-    for (name, ok) in results {
-        if *ok {
-            println!("  PASS  {name}");
+    let mut total_us = 0u64;
+    for r in results {
+        total_us += r.duration_us;
+        if r.passed {
+            println!("  PASS  {} ({} us)", r.name, r.duration_us);
             passed += 1;
         } else {
-            println!("  FAIL  {name}");
+            print!("  FAIL  {} ({} us)", r.name, r.duration_us);
+            if let Some(err) = &r.error {
+                print!(" — {err}");
+            }
+            println!();
             failed += 1;
         }
     }
 
     println!();
-    println!("{passed} passed, {failed} failed, {} total", passed + failed);
+    println!("{passed} passed, {failed} failed, {} total ({total_us} us)", passed + failed);
 
     if failed > 0 {
         process::exit(1);
@@ -253,4 +265,93 @@ fn cmd_emit_ir(args: &[String]) {
             process::exit(1);
         }
     }
+}
+
+fn cmd_lint(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("E301 usage: alm lint <file.alm> [--strict]");
+        process::exit(1);
+    }
+
+    let source = match fs::read_to_string(&args[2]) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E302 cannot read {}: {e}", args[2]);
+            process::exit(1);
+        }
+    };
+
+    let strict = args.iter().any(|a| a == "--strict");
+    let diags = Linter::lint(&source, strict);
+
+    if diags.is_empty() {
+        println!("OK: no issues");
+        return;
+    }
+
+    let mut errors = 0;
+    for d in &diags {
+        println!("  {d}");
+        if d.level == alm_lint::Level::Error {
+            errors += 1;
+        }
+    }
+
+    println!();
+    println!("{} issue(s) found", diags.len());
+
+    if errors > 0 {
+        process::exit(1);
+    }
+}
+
+fn cmd_ci() {
+    let config = match AlmConfig::find_and_load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("E304 {e}");
+            process::exit(1);
+        }
+    };
+
+    if config.ci.stages.is_empty() {
+        println!("No CI stages defined in alm.yaml");
+        return;
+    }
+
+    let stages = match config.ci_stages_ordered() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("E305 {e}");
+            process::exit(1);
+        }
+    };
+
+    println!("CI pipeline: {} stages", stages.len());
+    println!();
+
+    for stage in &stages {
+        print!("  [{:>8}] {}", stage.name, stage.run);
+
+        let status = std::process::Command::new("sh")
+            .args(["-c", &stage.run])
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                println!(" ... PASS");
+            }
+            Ok(s) => {
+                println!(" ... FAIL (exit {})", s.code().unwrap_or(-1));
+                process::exit(1);
+            }
+            Err(e) => {
+                println!(" ... ERROR ({e})");
+                process::exit(1);
+            }
+        }
+    }
+
+    println!();
+    println!("CI pipeline complete: {} stages passed", stages.len());
 }

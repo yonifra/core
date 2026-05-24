@@ -99,7 +99,16 @@ impl Flow {
 pub struct Env {
     scopes: Vec<HashMap<String, Value>>,
     pub metrics: HashMap<String, i64>,
-    pub test_results: Vec<(String, bool)>,
+    pub test_results: Vec<TestResult>,
+}
+
+/// Structured test result with timing.
+#[derive(Debug, Clone)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+    pub error: Option<String>,
+    pub duration_us: u64,
 }
 
 impl Env {
@@ -111,6 +120,11 @@ impl Env {
         global.insert("len".into(), Value::BuiltIn("len".into()));
         global.insert("assert".into(), Value::BuiltIn("assert".into()));
         global.insert("assertEq".into(), Value::BuiltIn("assertEq".into()));
+        global.insert("assertNe".into(), Value::BuiltIn("assertNe".into()));
+        global.insert("assertGt".into(), Value::BuiltIn("assertGt".into()));
+        global.insert("assertLt".into(), Value::BuiltIn("assertLt".into()));
+        global.insert("type".into(), Value::BuiltIn("type".into()));
+        global.insert("str".into(), Value::BuiltIn("str".into()));
 
         Self {
             scopes: vec![global],
@@ -197,15 +211,22 @@ impl Interpreter {
                 };
 
                 if let Some(body) = &ann.body {
+                    let start = std::time::Instant::now();
                     self.env.push_scope();
                     let result = self.eval_expr(body);
                     self.env.pop_scope();
+                    let duration_us = start.elapsed().as_micros() as u64;
 
-                    let passed = match result {
-                        Ok(_) => true,
-                        Err(_) => false,
+                    let (passed, error) = match result {
+                        Ok(_) => (true, None),
+                        Err(e) => (false, Some(e.msg)),
                     };
-                    self.env.test_results.push((test_name, passed));
+                    self.env.test_results.push(TestResult {
+                        name: test_name,
+                        passed,
+                        error,
+                        duration_us,
+                    });
                 }
                 Ok(Flow::Value(Value::Unit))
             }
@@ -517,6 +538,61 @@ impl Interpreter {
                 }
                 Ok(Flow::Value(last_err))
             }
+            "assertNe" => {
+                if args.len() != 2 {
+                    return Err(RuntimeError { msg: "assertNe: expected 2 args".into() });
+                }
+                let a = format!("{}", args[0]);
+                let b = format!("{}", args[1]);
+                if a != b {
+                    Ok(Flow::Value(Value::Unit))
+                } else {
+                    Err(RuntimeError { msg: format!("assertNe failed: {a} == {b}") })
+                }
+            }
+            "assertGt" => {
+                if args.len() != 2 {
+                    return Err(RuntimeError { msg: "assertGt: expected 2 args".into() });
+                }
+                match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) if a > b => Ok(Flow::Value(Value::Unit)),
+                    (Value::Float(a), Value::Float(b)) if a > b => Ok(Flow::Value(Value::Unit)),
+                    _ => Err(RuntimeError { msg: format!("assertGt failed: {} <= {}", args[0], args[1]) }),
+                }
+            }
+            "assertLt" => {
+                if args.len() != 2 {
+                    return Err(RuntimeError { msg: "assertLt: expected 2 args".into() });
+                }
+                match (&args[0], &args[1]) {
+                    (Value::Int(a), Value::Int(b)) if a < b => Ok(Flow::Value(Value::Unit)),
+                    (Value::Float(a), Value::Float(b)) if a < b => Ok(Flow::Value(Value::Unit)),
+                    _ => Err(RuntimeError { msg: format!("assertLt failed: {} >= {}", args[0], args[1]) }),
+                }
+            }
+            "type" => {
+                let type_name = match args.first() {
+                    Some(Value::Int(_)) => "int",
+                    Some(Value::Float(_)) => "float",
+                    Some(Value::Str(_)) => "str",
+                    Some(Value::Bool(_)) => "bool",
+                    Some(Value::Unit) => "unit",
+                    Some(Value::Struct(name, _)) => name.as_str(),
+                    Some(Value::List(_)) => "list",
+                    Some(Value::Fn(_, _)) => "fn",
+                    Some(Value::Error(_)) => "error",
+                    Some(Value::BuiltIn(_)) => "builtin",
+                    None => "unit",
+                };
+                Ok(Flow::Value(Value::Str(type_name.into())))
+            }
+            "str" => {
+                let s = match args.first() {
+                    Some(v) => format!("{v}"),
+                    None => String::new(),
+                };
+                Ok(Flow::Value(Value::Str(s)))
+            }
             _ => Err(RuntimeError { msg: format!("unknown builtin: {name}") }),
         }
     }
@@ -618,7 +694,7 @@ mod tests {
         let mut interp = Interpreter::new();
         interp.eval_source("@test(myTest) { assert(true) }").unwrap();
         assert_eq!(interp.env.test_results.len(), 1);
-        assert!(interp.env.test_results[0].1); // passed
+        assert!(interp.env.test_results[0].passed);
     }
 
     #[test]

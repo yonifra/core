@@ -1,0 +1,40 @@
+version: "0.1.0"
+
+project:
+  name: "alm-examples"
+  lang_version: "0.1-alpha"
+  targets: [darwin-arm64]
+
+modules:
+  - path: examples/
+    entry: hello.alm
+
+build:
+  opt_level: 2
+  lto: false
+
+test:
+  strategy: unit
+  coverage_min: 80
+  sandbox: strict
+  timeout_ms: 5000
+
+ci:
+  trigger: [push]
+  stages:
+    - name: check
+      run: cargo run -p alm-cli -- check examples/hello.alm
+    - name: test
+      run: cargo run -p alm-cli -- test examples/hello.alm
+      needs: [check]
+    - name: lint
+      run: cargo run -p alm-cli -- lint examples/hello.alm
+      needs: [check]
+
+metrics:
+  backend: otlp
+
+agent:
+  model: claude-4
+  self_heal: true
+  review_mode: diff
